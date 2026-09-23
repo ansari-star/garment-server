@@ -6,6 +6,90 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+// ==========================================
+// 👕 MOHD GARMENT SYNC ROUTES (DIRECT IN SERVER.JS)
+// ==========================================
+const GARMENT_SECRET = process.env.API_SECRET || "my_secret_token_123";
+let garmentSyncDatabase = [];
+
+// 1. Health check route (Browser me test karne ke liye)
+app.get("/api/v1/sync/health", (req, res) => {
+  res.json({
+    status: "Garment Sync Service Active",
+    time: new Date().toISOString(),
+    totalRecords: garmentSyncDatabase.length
+  });
+});
+
+// 2. Android App Push route
+app.post("/api/v1/sync/push", (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"] || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+    if (token !== GARMENT_SECRET) {
+      return res.status(403).json({ success: false, message: "Invalid API Secret" });
+    }
+
+    const { factoryId, records } = req.body;
+    if (!Array.isArray(records)) {
+      return res.status(400).json({ success: false, message: "records must be an array" });
+    }
+
+    const now = Date.now();
+    let count = 0;
+    for (const record of records) {
+      const idx = garmentSyncDatabase.findIndex(r => r.id === record.id);
+      const item = { ...record, factoryId: factoryId || record.factoryId, serverTimestamp: now };
+      if (idx >= 0) {
+        garmentSyncDatabase[idx] = item;
+      } else {
+        garmentSyncDatabase.push(item);
+      }
+      count++;
+    }
+
+    return res.json({
+      success: true,
+      processedCount: count,
+      serverTimestamp: now,
+      message: "Sync push success"
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 3. Android App Pull route
+app.get("/api/v1/sync/pull", (req, res) => {
+  try {
+    const authHeader = req.headers["authorization"] || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+    if (token !== GARMENT_SECRET) {
+      return res.status(403).json({ success: false, message: "Invalid API Secret" });
+    }
+
+    const { factoryId, sinceTimestamp } = req.query;
+    const since = parseInt(sinceTimestamp, 10) || 0;
+
+    const updates = garmentSyncDatabase.filter(r => {
+      const matchFactory = !factoryId || r.factoryId === factoryId;
+      const matchTime = (r.serverTimestamp || r.timestamp) > since;
+      return matchFactory && matchTime;
+    });
+
+    return res.json({
+      success: true,
+      count: updates.length,
+      serverTimestamp: Date.now(),
+      records: updates
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+// ==========================================
 
 // 2. Route register karein
 app.use('/api/v1/sync', garmentSyncRouter);
