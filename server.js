@@ -9,6 +9,11 @@ app.use(express.json({ limit: '50mb' }));
 
 // 2. Route register karein
 app.use('/api/v1/sync', garmentSyncRouter);
+// 1. Nayi file ko import karein
+const garmentSyncRouter = require('./routes/garmentSync');
+
+// 2. Route register karein
+app.use('/api/v1/sync', garmentSyncRouter);
 // Database Connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
