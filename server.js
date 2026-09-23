@@ -6,11 +6,14 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-// ==========================================
-// 👕 MOHD GARMENT SYNC ROUTES (DIRECT IN SERVER.JS)
-// ==========================================
-const GARMENT_SECRET = process.env.API_SECRET || "my_secret_token_123";
+
+// Secret Token support (dono env variables check karega)
+const GARMENT_SECRET = process.env.API_SECRET_TOKEN || process.env.API_SECRET || "my_secret_token_123";
 let garmentSyncDatabase = [];
+
+// ==========================================
+// 👕 MOHD GARMENT SYNC ROUTES
+// ==========================================
 
 // 1. Health check route (Browser me test karne ke liye)
 app.get("/api/v1/sync/health", (req, res) => {
@@ -89,15 +92,11 @@ app.get("/api/v1/sync/pull", (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// ==========================================
+// 🗄️ EXISTING POSTGRES DATABASE & ROUTES
 // ==========================================
 
-// 2. Route register karein
-app.use('/api/v1/sync', garmentSyncRouter);
-// 1. Nayi file ko import karein
-const garmentSyncRouter = require('./routes/garmentSync');
-
-// 2. Route register karein
-app.use('/api/v1/sync', garmentSyncRouter);
 // Database Connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -162,12 +161,12 @@ async function initDb() {
 }
 initDb().catch(console.error);
 
-// 1. Live Health Check
+// 1. Live Health Check (Existing)
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'ONLINE', message: 'Central Server Running!' });
 });
 
-// 2. Sync Push & Pull Endpoint
+// 2. Existing Push & Pull Endpoint
 app.post('/api/v1/sync/push-pull', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -265,29 +264,28 @@ app.post('/api/v1/sync/push-pull', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
-// Owner Protected Reset Endpoint for Central Server
+// Reset Factory Endpoint
 app.post('/api/v1/sync/reset-factory', async (req, res) => {
   const { factoryId, ownerPassword } = req.body;
   const authHeader = req.headers['authorization'] || '';
 
-  // 1. Check Secret Token
   if (process.env.API_SECRET_TOKEN) {
     if (authHeader !== `Bearer ${process.env.API_SECRET_TOKEN.trim()}`) {
       return res.status(401).json({ error: 'Unauthorized Token' });
     }
   }
 
-  // 2. Wipe only if authorized
   try {
     await pool.query('DELETE FROM payments WHERE factory_id = $1', [factoryId]);
     await pool.query('DELETE FROM fabric_challans WHERE factory_id = $1', [factoryId]);
     await pool.query('DELETE FROM maal_bills WHERE factory_id = $1', [factoryId]);
-    // Note: Masters table ko khali nahi karte taaki karigaron ke naam bache rahein, sirf bills 0 ho jayein
     
     res.json({ status: 'SUCCESS', message: 'Central Server Factory Data Reset Successfully!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Server Listen (Always at the bottom)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
