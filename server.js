@@ -176,3 +176,27 @@ app.post('/api/v1/sync/push-pull', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+// Owner Protected Reset Endpoint for Central Server
+app.post('/api/v1/sync/reset-factory', async (req, res) => {
+  const { factoryId, ownerPassword } = req.body;
+  const authHeader = req.headers['authorization'] || '';
+
+  // 1. Check Secret Token
+  if (process.env.API_SECRET_TOKEN) {
+    if (authHeader !== `Bearer ${process.env.API_SECRET_TOKEN.trim()}`) {
+      return res.status(401).json({ error: 'Unauthorized Token' });
+    }
+  }
+
+  // 2. Wipe only if authorized
+  try {
+    await pool.query('DELETE FROM payments WHERE factory_id = $1', [factoryId]);
+    await pool.query('DELETE FROM fabric_challans WHERE factory_id = $1', [factoryId]);
+    await pool.query('DELETE FROM maal_bills WHERE factory_id = $1', [factoryId]);
+    // Note: Masters table ko khali nahi karte taaki karigaron ke naam bache rahein, sirf bills 0 ho jayein
+    
+    res.json({ status: 'SUCCESS', message: 'Central Server Factory Data Reset Successfully!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
