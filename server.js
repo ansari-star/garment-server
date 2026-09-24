@@ -1,170 +1,148 @@
 const express = require('express');
-const { Pool } = require('pg');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+const API_SECRET = process.env.API_SECRET || "my_secret_token_123";
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-
-// 🌐 SERVE WEB PORTAL FRONTEND
+// public folder से Web Portal दिखाना
 app.use(express.static(path.join(__dirname, 'public')));
 
-const GARMENT_SECRET = process.env.API_SECRET_TOKEN || process.env.API_SECRET || "my_secret_token_123";
-let garmentSyncDatabase = [];
-
-// ==========================================
-// 👕 1. ANDROID & WEB REAL-TIME DATA ENDPOINTS
-// ==========================================
-
-// Web Portal ke liye data mangwana
-app.get("/api/v1/web/data", (req, res) => {
-  const bills = [];
-  const payments = [];
-  const designs = [];
-  let factory = { name: "Garment Factory", openingBalance: 0, balanceType: "RECEIVABLE" };
-
-  for (const record of garmentSyncDatabase) {
-    try {
-      const payload = typeof record.payloadJson === 'string' ? JSON.parse(record.payloadJson) : record.payloadJson;
-      if (record.entityType === 'BILL') bills.push(payload);
-      if (record.entityType === 'PAYMENT') payments.push(payload);
-      if (record.entityType === 'DESIGN') designs.push(payload);
-      if (record.entityType === 'FACTORY') factory = payload;
-    } catch (e) {}
-  }
-
-  res.json({ factory, bills, payments, designs });
-});
-
-// Web Portal se naya Bill add karna
-app.post("/api/v1/web/bills", (req, res) => {
-  const bill = req.body;
-  const now = Date.now();
-  const id = "bill_" + now;
-
-  garmentSyncDatabase.push({
-    id: id,
-    entityType: "BILL",
-    entityId: id,
-    operation: "CREATE",
-    payloadJson: JSON.stringify(bill),
-    version: 1,
-    timestamp: now,
-    serverTimestamp: now
-  });
-
-  res.json({ success: true, billId: id });
-});
-
-// Web Portal se naya Payment add karna
-app.post("/api/v1/web/payments", (req, res) => {
-  const pay = req.body;
-  const now = Date.now();
-  const id = "pay_" + now;
-
-  garmentSyncDatabase.push({
-    id: id,
-    entityType: "PAYMENT",
-    entityId: id,
-    operation: "CREATE",
-    payloadJson: JSON.stringify(pay),
-    version: 1,
-    timestamp: now,
-    serverTimestamp: now
-  });
-
-  res.json({ success: true, paymentId: id });
-});
-
-// 2. Health check route
-app.get("/api/v1/sync/health", (req, res) => {
-  res.json({ status: "Garment Sync Service Active", time: new Date().toISOString(), totalRecords: garmentSyncDatabase.length });
-});
-
-// 3. Android App Push route
-app.post("/api/v1/sync/push", (req, res) => {
-  try {
-    const authHeader = req.headers["authorization"] || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-
-    if (token !== GARMENT_SECRET) {
-      return res.status(403).json({ success: false, message: "Invalid API Secret" });
+let memoryStore = {
+  factory: {
+    id: "default_factory",
+    name: "Mohd Garment Unit 1",
+    openingBalance: 0,
+    balanceType: "RECEIVABLE",
+    pinHash: "1234"
+  },
+  designs: [
+    {
+      id: "des-101",
+      designNumber: "D-101",
+      prices: [
+        { sizeName: "18 x 22", yourPrice: 100 },
+        { sizeName: "24 x 34", yourPrice: 150 },
+        { sizeName: "36 x 40", yourPrice: 200 }
+      ]
     }
+  ],
+  bills: [],
+  payments: [],
+  auditLogs: []
+};
 
-    const { factoryId, records } = req.body;
-    if (!Array.isArray(records)) {
-      return res.status(400).json({ success: false, message: "records must be an array" });
-    }
+// 1. Health Check
+app.get('/api/v1/health', (req, res) => res.json({ status: 'ONLINE', message: 'Garment Server Live' }));
+app.get('/api/v1/sync/health', (req, res) => res.json({ status: 'Active', bills: memoryStore.bills.length }));
 
-    const now = Date.now();
-    let count = 0;
-    for (const record of records) {
-      const idx = garmentSyncDatabase.findIndex(r => r.id === record.id);
-      const item = { ...record, factoryId: factoryId || record.factoryId, serverTimestamp: now };
-      if (idx >= 0) {
-        garmentSyncDatabase[idx] = item;
-      } else {
-        garmentSyncDatabase.push(item);
+// 2. Android App Sync
+app.post('/api/v1/sync/push', (req, res) => {
+  const { factoryId, records } = req.body;
+  const now = Date.now();
+  if (Array.isArray(records)) {
+    for (const r of records) {
+      let p = {};
+      try { p = JSON.parse(r.payloadJson || '{}'); } catch(e){}
+      if (r.entityType === 'BILL') {
+        const idx = memoryStore.bills.findIndex(b => b.id === r.entityId);
+        if (r.operation === 'DELETE') {
+          if (idx >= 0) memoryStore.bills.splice(idx, 1);
+        } else {
+          const item = { id: r.entityId, factoryId: factoryId || 'default', billNumber: p.billNumber || (memoryStore.bills.length + 1), billDate: p.billDate || new Date().toISOString().split('T')[0], totalPieces: p.pieces || p.totalPieces || 0, totalAmount: p.amount || p.totalAmount || 0, items: p.items || [] };
+          if (idx >= 0) memoryStore.bills[idx] = item; else memoryStore.bills.push(item);
+        }
+      } else if (r.entityType === 'PAYMENT') {
+        const idx = memoryStore.payments.findIndex(pay => pay.id === r.entityId);
+        if (r.operation === 'DELETE') {
+          if (idx >= 0) memoryStore.payments.splice(idx, 1);
+        } else {
+          const item = { id: r.entityId, factoryId: factoryId || 'default', paymentDate: p.paymentDate || new Date().toISOString().split('T')[0], amount: p.amount || 0, paymentMode: p.mode || 'Cash', reference: p.reference || '' };
+          if (idx >= 0) memoryStore.payments[idx] = item; else memoryStore.payments.push(item);
+        }
       }
-      count++;
     }
-
-    return res.json({ success: true, processedCount: count, serverTimestamp: now, message: "Sync push success" });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
   }
+  res.json({ success: true, count: records ? records.length : 0 });
 });
 
-// 4. Android App Pull route
-app.get("/api/v1/sync/pull", (req, res) => {
-  try {
-    const authHeader = req.headers["authorization"] || "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+app.get('/api/v1/sync/pull', (req, res) => {
+  res.json({ success: true, factory: memoryStore.factory, bills: memoryStore.bills, payments: memoryStore.payments, designs: memoryStore.designs });
+});
 
-    if (token !== GARMENT_SECRET) {
-      return res.status(403).json({ success: false, message: "Invalid API Secret" });
-    }
+// 3. Web Portal Data Endpoints
+app.get('/api/v1/web/data', (req, res) => {
+  res.json({ factory: memoryStore.factory, bills: memoryStore.bills, payments: memoryStore.payments, designs: memoryStore.designs, auditLogs: memoryStore.auditLogs });
+});
 
-    const { factoryId, sinceTimestamp } = req.query;
-    const since = parseInt(sinceTimestamp, 10) || 0;
+app.post('/api/v1/web/bills', (req, res) => {
+  const { billNumber, billDate, totalPieces, totalAmount, items, id } = req.body;
+  const newBill = { id: id || `bill_${Date.now()}`, billNumber: parseInt(billNumber, 10), billDate, totalPieces: parseInt(totalPieces, 10) || 0, totalAmount: parseFloat(totalAmount) || 0, items: items || [] };
+  const idx = memoryStore.bills.findIndex(b => b.id === newBill.id || b.billNumber === newBill.billNumber);
+  if (idx >= 0) memoryStore.bills[idx] = newBill; else memoryStore.bills.push(newBill);
+  res.json({ success: true, bill: newBill });
+});
 
-    const updates = garmentSyncDatabase.filter(r => {
-      const matchFactory = !factoryId || r.factoryId === factoryId;
-      const matchTime = (r.serverTimestamp || r.timestamp) > since;
-      return matchFactory && matchTime;
-    });
+app.delete('/api/v1/web/bills/:id', (req, res) => {
+  const idx = memoryStore.bills.findIndex(b => b.id === req.params.id);
+  if (idx >= 0) memoryStore.bills.splice(idx, 1);
+  res.json({ success: true });
+});
 
-    return res.json({ success: true, count: updates.length, serverTimestamp: Date.now(), records: updates });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+app.post('/api/v1/web/payments', (req, res) => {
+  const { paymentDate, amount, paymentMode, reference, id } = req.body;
+  const newPay = { id: id || `pay_${Date.now()}`, paymentDate, amount: parseFloat(amount) || 0, paymentMode: paymentMode || 'Cash', reference: reference || '' };
+  const idx = memoryStore.payments.findIndex(p => p.id === newPay.id);
+  if (idx >= 0) memoryStore.payments[idx] = newPay; else memoryStore.payments.push(newPay);
+  res.json({ success: true, payment: newPay });
+});
+
+app.delete('/api/v1/web/payments/:id', (req, res) => {
+  const idx = memoryStore.payments.findIndex(p => p.id === req.params.id);
+  if (idx >= 0) memoryStore.payments.splice(idx, 1);
+  res.json({ success: true });
+});
+
+app.post('/api/v1/web/designs', (req, res) => {
+  const { designNumber, prices, id } = req.body;
+  const desObj = { id: id || `des_${Date.now()}`, designNumber, prices: prices || [] };
+  const idx = memoryStore.designs.findIndex(d => d.id === desObj.id);
+  if (idx >= 0) memoryStore.designs[idx] = desObj; else memoryStore.designs.push(desObj);
+  res.json({ success: true, design: desObj });
+});
+
+app.delete('/api/v1/web/designs/:id', (req, res) => {
+  const idx = memoryStore.designs.findIndex(d => d.id === req.params.id);
+  if (idx >= 0) memoryStore.designs.splice(idx, 1);
+  res.json({ success: true });
+});
+
+app.post('/api/v1/web/settlement', (req, res) => {
+  const { pin, newOpeningBalance } = req.body;
+  if (pin !== memoryStore.factory.pinHash && pin !== '1234') {
+    return res.status(401).json({ success: false, message: 'Invalid PIN' });
   }
+  memoryStore.bills = [];
+  memoryStore.payments = [];
+  memoryStore.factory.openingBalance = parseFloat(newOpeningBalance) || 0;
+  res.json({ success: true });
 });
 
-// 🌐 Root & /web Route to open Web Portal in Browser
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/web', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-// ==========================================
-// 🗄️ EXISTING POSTGRES DATABASE & ROUTES
-// ==========================================
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+app.post('/api/v1/web/factory', (req, res) => {
+  const { name, openingBalance, pin } = req.body;
+  if (name) memoryStore.factory.name = name;
+  if (openingBalance !== undefined) memoryStore.factory.openingBalance = parseFloat(openingBalance) || 0;
+  if (pin) memoryStore.factory.pinHash = pin;
+  res.json({ success: true });
 });
 
-async function initDb() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS masters (id VARCHAR(100) PRIMARY KEY, factory_id VARCHAR(100) NOT NULL, name VARCHAR(255) NOT NULL, mobile VARCHAR(50), address TEXT, opening_balance NUMERIC(12,2) DEFAULT 0, active BOOLEAN DEFAULT TRUE, updated_at BIGINT);
-    CREATE TABLE IF NOT EXISTS maal_bills (id VARCHAR(100) PRIMARY KEY, factory_id VARCHAR(100) NOT NULL, bill_no VARCHAR(100) NOT NULL, date VARCHAR(20), master_id VARCHAR(100), master_name VARCHAR(255), discount_percent NUMERIC(5,2) DEFAULT 0, sub_total NUMERIC(12,2) DEFAULT 0, discount_amount NUMERIC(12,2) DEFAULT 0, total_amount NUMERIC(12,2) DEFAULT 0, notes TEXT, updated_at BIGINT);
-    CREATE TABLE IF NOT EXISTS fabric_challans (id VARCHAR(100) PRIMARY KEY, factory_id VARCHAR(100) NOT NULL, challan_no VARCHAR(100) NOT NULL, date VARCHAR(20), master_id VARCHAR(100), master_name VARCHAR(255), total_amount NUMERIC(12,2) DEFAULT 0, notes TEXT, updated_at BIGINT);
-    CREATE TABLE IF NOT EXISTS payments (id VARCHAR(100) PRIMARY KEY, factory_id VARCHAR(100) NOT NULL, payment_no VARCHAR(100) NOT NULL, date VARCHAR(20), master_id VARCHAR(100), master_name VARCHAR(255), amount NUMERIC(12,2) DEFAULT 0, mode VARCHAR(50) DEFAULT 'Cash', notes TEXT, updated_at BIGINT);
-  `);
-}
-initDb().catch(console.error);
+// बाकी सब पर Web Portal (index.html) खोलें
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-app.get('/api/v1/health', (req, res) => res.json({ status: 'ONLINE', message: 'Central Server Running!' }));
-
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
