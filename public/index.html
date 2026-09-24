@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mohd Garment ERP - Web Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans flex flex-col">
+
+  <!-- TOP HEADER -->
+  <header class="bg-emerald-800 text-white shadow sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center font-bold text-xl border border-white/20">
+          <i class="fa-solid fa-shirt text-emerald-300"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight flex items-center gap-2">
+            Mohd Garment ERP
+            <span class="text-xs bg-emerald-700 px-2 py-0.5 rounded-full border border-emerald-500/40 text-emerald-200">Web Portal</span>
+          </h1>
+          <p class="text-xs text-emerald-200/90" id="factoryHeaderSubtitle">Connecting to server...</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <div id="syncBadge" class="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-900/60 border border-emerald-600 text-xs text-emerald-200">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="syncText">Sync Live</span>
+        </div>
+        <button onclick="fetchLiveData()" class="p-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 transition text-emerald-100" title="Refresh">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
+        <button onclick="openNewBillModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 shadow">
+          <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Add Bill</span>
+        </button>
+        <button onclick="openPaymentModal()" class="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5 shadow">
+          <i class="fa-solid fa-hand-holding-dollar"></i> <span class="hidden sm:inline">Payment</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN BODY -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+    <!-- KPI SUMMARY CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <span class="text-xs font-semibold uppercase text-slate-400">Total Net Balance</span>
+        <div class="text-2xl font-extrabold text-emerald-700 mt-1" id="kpiBalance">₹0.00</div>
+        <span class="text-xs text-slate-500" id="kpiBalanceType">Receivable (Jama)</span>
+      </div>
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <span class="text-xs font-semibold uppercase text-slate-400">Today's Pieces</span>
+        <div class="text-2xl font-extrabold text-slate-800 mt-1" id="kpiTodayPieces">0 Pcs</div>
+        <span class="text-xs text-slate-500">Today's production</span>
+      </div>
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <span class="text-xs font-semibold uppercase text-slate-400">Today's Maal Value</span>
+        <div class="text-2xl font-extrabold text-indigo-700 mt-1" id="kpiTodayAmount">₹0.00</div>
+        <span class="text-xs text-slate-500" id="kpiTodayBillsCount">0 Bills generated</span>
+      </div>
+      <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <span class="text-xs font-semibold uppercase text-slate-400">Today's Payments</span>
+        <div class="text-2xl font-extrabold text-teal-700 mt-1" id="kpiTodayPayment">₹0.00</div>
+        <span class="text-xs text-slate-500">Received today</span>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="flex border-b border-slate-200 px-4 pt-2 gap-2">
+        <button onclick="switchTab('statement')" id="tabBtnStatement" class="px-4 py-3 text-sm font-semibold border-b-2 border-emerald-600 text-emerald-700 flex items-center gap-2">
+          <i class="fa-solid fa-file-invoice"></i> Statement / Khata
+        </button>
+        <button onclick="switchTab('bills')" id="tabBtnBills" class="px-4 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-500 flex items-center gap-2">
+          <i class="fa-solid fa-receipt"></i> Bills History
+        </button>
+        <button onclick="switchTab('payments')" id="tabBtnPayments" class="px-4 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-500 flex items-center gap-2">
+          <i class="fa-solid fa-credit-card"></i> Payments
+        </button>
+      </div>
+
+      <!-- STATEMENT TAB -->
+      <div id="tabStatement" class="p-6 space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-bold text-slate-500 uppercase mr-1">Preset:</span>
+            <button onclick="setStatementPreset('1 Day', 0)" class="preset-btn px-3 py-1 rounded-lg text-xs font-semibold bg-white border border-slate-300">1 Day</button>
+            <button onclick="setStatementPreset('7 Days', 6)" class="preset-btn active px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white">7 Days</button>
+            <button onclick="setStatementPreset('15 Days', 14)" class="preset-btn px-3 py-1 rounded-lg text-xs font-semibold bg-white border border-slate-300">15 Days</button>
+            <button onclick="setStatementPreset('30 Days', 29)" class="preset-btn px-3 py-1 rounded-lg text-xs font-semibold bg-white border border-slate-300">30 Days</button>
+          </div>
+          <div class="flex items-center gap-2 text-sm">
+            <input type="date" id="stmtFromDate" onchange="renderStatement()" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs" />
+            <span>to</span>
+            <input type="date" id="stmtToDate" onchange="renderStatement()" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs" />
+            <button onclick="window.print()" class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow">
+              <i class="fa-solid fa-print"></i> Print
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-emerald-50/60 p-4 rounded-xl border border-emerald-100 text-sm">
+          <div><span class="text-xs text-slate-500">Opening Balance</span><div class="font-bold text-slate-800 text-base" id="stmtOpeningBal">₹0.00</div></div>
+          <div><span class="text-xs text-emerald-700 font-medium">+ Maal (Debit)</span><div class="font-bold text-emerald-800 text-base" id="stmtPeriodBills">₹0.00</div></div>
+          <div><span class="text-xs text-rose-700 font-medium">- Payments (Credit)</span><div class="font-bold text-rose-700 text-base" id="stmtPeriodPayments">₹0.00</div></div>
+          <div><span class="text-xs text-slate-600 font-medium">= Closing Balance</span><div class="font-extrabold text-emerald-900 text-base" id="stmtClosingBal">₹0.00</div></div>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-100 text-slate-600 text-xs font-bold uppercase border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4">Date</th>
+                <th class="py-3 px-4">Type</th>
+                <th class="py-3 px-4">Reference</th>
+                <th class="py-3 px-4">Details</th>
+                <th class="py-3 px-4 text-right">Debit (₹)</th>
+                <th class="py-3 px-4 text-right">Credit (₹)</th>
+                <th class="py-3 px-4 text-right">Running (₹)</th>
+              </tr>
+            </thead>
+            <tbody id="statementTableBody" class="divide-y divide-slate-100">
+              <tr><td colspan="7" class="py-8 text-center text-slate-400">Loading statement...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- BILLS TAB -->
+      <div id="tabBills" class="p-6 hidden space-y-4">
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-100 text-slate-600 text-xs font-bold uppercase border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4">Bill No</th>
+                <th class="py-3 px-4">Date</th>
+                <th class="py-3 px-4 text-center">Total Pieces</th>
+                <th class="py-3 px-4 text-right">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody id="billsTableBody" class="divide-y divide-slate-100">
+              <tr><td colspan="4" class="py-8 text-center text-slate-400">No bills loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PAYMENTS TAB -->
+      <div id="tabPayments" class="p-6 hidden space-y-4">
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-100 text-slate-600 text-xs font-bold uppercase border-b border-slate-200">
+              <tr>
+                <th class="py-3 px-4">Date</th>
+                <th class="py-3 px-4">Mode</th>
+                <th class="py-3 px-4">Reference Note</th>
+                <th class="py-3 px-4 text-right">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody id="paymentsTableBody" class="divide-y divide-slate-100">
+              <tr><td colspan="4" class="py-8 text-center text-slate-400">No payments loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- MODAL: ADD BILL -->
+  <div id="modalNewBill" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between border-b pb-2 font-bold text-lg"><span>Create New Bill</span><button onclick="closeModal('modalNewBill')">✕</button></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs font-semibold">Bill No</label><input type="number" id="newBillNumber" class="w-full border p-2 rounded text-sm" /></div>
+        <div><label class="text-xs font-semibold">Date</label><input type="date" id="newBillDate" class="w-full border p-2 rounded text-sm" /></div>
+      </div>
+      <div class="grid grid-cols-4 gap-2 bg-slate-50 p-3 rounded-lg border">
+        <input type="text" id="itemDesignNo" placeholder="Design No" class="border p-1.5 rounded text-xs" />
+        <input type="text" id="itemSize" placeholder="Size" class="border p-1.5 rounded text-xs" />
+        <input type="number" id="itemRate" placeholder="Rate ₹" class="border p-1.5 rounded text-xs" />
+        <input type="number" id="itemQty" placeholder="Qty Pcs" class="border p-1.5 rounded text-xs" />
+        <button onclick="addItemRow()" class="col-span-4 bg-slate-800 text-white text-xs font-bold py-2 rounded">+ Add Item</button>
+      </div>
+      <div id="draftItemsList" class="text-xs max-h-36 overflow-y-auto space-y-1"></div>
+      <div class="flex justify-between font-bold border-t pt-2 text-sm">
+        <span>Total Pcs: <span id="draftPcs">0</span></span>
+        <span class="text-emerald-700">Total: <span id="draftTotal">₹0.00</span></span>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modalNewBill')" class="px-4 py-1.5 border rounded text-xs">Cancel</button>
+        <button onclick="saveBill()" class="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded text-xs">Save & Sync</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD PAYMENT -->
+  <div id="modalPayment" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-6 space-y-3 shadow-2xl">
+      <div class="flex justify-between border-b pb-2 font-bold text-lg"><span>Add Payment</span><button onclick="closeModal('modalPayment')">✕</button></div>
+      <div><label class="text-xs font-semibold">Date</label><input type="date" id="payDate" class="w-full border p-2 rounded text-sm" /></div>
+      <div><label class="text-xs font-semibold">Amount (₹)</label><input type="number" id="payAmount" class="w-full border p-2 rounded text-lg font-bold text-emerald-700" /></div>
+      <div><label class="text-xs font-semibold">Mode</label>
+        <select id="payMode" class="w-full border p-2 rounded text-sm bg-white">
+          <option value="Cash">Cash (नकद)</option>
+          <option value="UPI">UPI / GPay / PhonePe</option>
+          <option value="Bank">Bank Transfer</option>
+          <option value="Cheque">Cheque</option>
+        </select>
+      </div>
+      <div><label class="text-xs font-semibold">Reference Note</label><input type="text" id="payNotes" class="w-full border p-2 rounded text-sm" /></div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeModal('modalPayment')" class="px-4 py-1.5 border rounded text-xs">Cancel</button>
+        <button onclick="savePayment()" class="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded text-xs">Save Payment</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = window.location.origin + "/api/v1";
+    let allBills = [], allPayments = [], draftItems = [], factoryData = { openingBalance: 0, name: "Garment Factory" };
+
+    function formatInr(n) { return "₹" + (Number(n)||0).toLocaleString('en-IN', { minimumFractionDigits: 2 }); }
+    function today() { return new Date().toISOString().split('T')[0]; }
+    function daysAgo(d) { const x = new Date(); x.setDate(x.getDate() - d); return x.toISOString().split('T')[0]; }
+
+    document.getElementById('stmtFromDate').value = daysAgo(6);
+    document.getElementById('stmtToDate').value = today();
+    document.getElementById('newBillDate').value = today();
+    document.getElementById('payDate').value = today();
+
+    function switchTab(t) {
+      ['statement', 'bills', 'payments'].forEach(tab => {
+        document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.toggle('hidden', tab !== t);
+        const btn = document.getElementById('tabBtn' + tab.charAt(0).toUpperCase() + tab.slice(1));
+        btn.classList.toggle('border-emerald-600', tab === t);
+        btn.classList.toggle('text-emerald-700', tab === t);
+      });
+    }
+
+    function setStatementPreset(name, days) {
+      document.getElementById('stmtFromDate').value = daysAgo(days);
+      document.getElementById('stmtToDate').value = today();
+      renderStatement();
+    }
+
+    async function fetchLiveData() {
+      try {
+        const res = await fetch(`${API_URL}/web/data`);
+        const data = await res.json();
+        factoryData = data.factory || factoryData;
+        allBills = data.bills || [];
+        allPayments = data.payments || [];
+
+        document.getElementById('factoryHeaderSubtitle').innerText = `${factoryData.name} • Live Connected`;
+        renderKPIs();
+        renderStatement();
+        renderBills();
+        renderPayments();
+      } catch (e) { console.error(e); }
+    }
+
+    function renderKPIs() {
+      const td = today();
+      let tPcs = 0, tAmt = 0, tPay = 0, totalB = 0, totalP = 0;
+      allBills.forEach(b => { totalB += Number(b.totalAmount)||0; if (b.billDate === td) { tPcs += Number(b.totalPieces)||0; tAmt += Number(b.totalAmount)||0; } });
+      allPayments.forEach(p => { totalP += Number(p.amount)||0; if (p.paymentDate === td) { tPay += Number(p.amount)||0; } });
+      const net = (Number(factoryData.openingBalance)||0) + totalB - totalP;
+      document.getElementById('kpiBalance').innerText = formatInr(net);
+      document.getElementById('kpiTodayPieces').innerText = tPcs + " Pcs";
+      document.getElementById('kpiTodayAmount').innerText = formatInr(tAmt);
+      document.getElementById('kpiTodayPayment').innerText = formatInr(tPay);
+    }
+
+    function renderStatement() {
+      const from = document.getElementById('stmtFromDate').value;
+      const to = document.getElementById('stmtToDate').value;
+      let entries = [], pBills = 0, pPays = 0;
+
+      allBills.forEach(b => {
+        if (b.billDate >= from && b.billDate <= to) {
+          pBills += Number(b.totalAmount)||0;
+          entries.push({ date: b.billDate, type: 'BILL', ref: `Bill #${b.billNumber}`, details: `${b.totalPieces} Pcs`, debit: Number(b.totalAmount)||0, credit: 0 });
+        }
+      });
+      allPayments.forEach(p => {
+        if (p.paymentDate >= from && p.paymentDate <= to) {
+          pPays += Number(p.amount)||0;
+          entries.push({ date: p.paymentDate, type: 'PAYMENT', ref: p.paymentMode||'Cash', details: p.reference||'-', debit: 0, credit: Number(p.amount)||0 });
+        }
+      });
+      entries.sort((a,b) => a.date.localeCompare(b.date));
+
+      const open = Number(factoryData.openingBalance)||0;
+      document.getElementById('stmtOpeningBal').innerText = formatInr(open);
+      document.getElementById('stmtPeriodBills').innerText = formatInr(pBills);
+      document.getElementById('stmtPeriodPayments').innerText = formatInr(pPays);
+      document.getElementById('stmtClosingBal').innerText = formatInr(open + pBills - pPays);
+
+      let run = open;
+      document.getElementById('statementTableBody').innerHTML = entries.map(e => {
+        run += e.debit - e.credit;
+        return `<tr class="hover:bg-slate-50"><td class="py-2.5 px-4">${e.date}</td><td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded text-xs ${e.type==='BILL'?'bg-indigo-100 text-indigo-700':'bg-emerald-100 text-emerald-700'}">${e.type}</span></td><td class="py-2.5 px-4 font-semibold">${e.ref}</td><td class="py-2.5 px-4 text-slate-500">${e.details}</td><td class="py-2.5 px-4 text-right text-indigo-700 font-semibold">${e.debit>0?formatInr(e.debit):'-'}</td><td class="py-2.5 px-4 text-right text-emerald-700 font-semibold">${e.credit>0?formatInr(e.credit):'-'}</td><td class="py-2.5 px-4 text-right font-bold">${formatInr(run)}</td></tr>`;
+      }).join('') || `<tr><td colspan="7" class="py-8 text-center text-slate-400">No records found</td></tr>`;
+    }
+
+    function renderBills() {
+      document.getElementById('billsTableBody').innerHTML = allBills.map(b => `<tr class="hover:bg-slate-50"><td class="py-3 px-4 font-bold">Bill #${b.billNumber}</td><td class="py-3 px-4">${b.billDate}</td><td class="py-3 px-4 text-center">${b.totalPieces} Pcs</td><td class="py-3 px-4 text-right font-bold text-emerald-800">${formatInr(b.totalAmount)}</td></tr>`).join('') || `<tr><td colspan="4" class="py-8 text-center text-slate-400">No bills</td></tr>`;
+    }
+
+    function renderPayments() {
+      document.getElementById('paymentsTableBody').innerHTML = allPayments.map(p => `<tr class="hover:bg-slate-50"><td class="py-3 px-4">${p.paymentDate}</td><td class="py-3 px-4 font-semibold">${p.paymentMode}</td><td class="py-3 px-4 text-slate-500">${p.reference||'-'}</td><td class="py-3 px-4 text-right font-bold text-emerald-700">${formatInr(p.amount)}</td></tr>`).join('') || `<tr><td colspan="4" class="py-8 text-center text-slate-400">No payments</td></tr>`;
+    }
+
+    function openNewBillModal() {
+      draftItems = [];
+      document.getElementById('newBillNumber').value = (allBills.length > 0 ? Math.max(...allBills.map(b => b.billNumber||0)) + 1 : 1);
+      renderDraft();
+      document.getElementById('modalNewBill').classList.remove('hidden');
+    }
+    function addItemRow() {
+      const d = document.getElementById('itemDesignNo').value.trim();
+      const s = document.getElementById('itemSize').value.trim() || 'Free';
+      const r = parseFloat(document.getElementById('itemRate').value)||0;
+      const q = parseInt(document.getElementById('itemQty').value, 10)||0;
+      if (!d || r<=0 || q<=0) { alert('Enter valid design, rate and qty'); return; }
+      draftItems.push({ designNumber: d, size: s, rate: r, quantity: q, amount: r*q });
+      renderDraft();
+    }
+    function renderDraft() {
+      let pcs = 0, tot = 0;
+      document.getElementById('draftItemsList').innerHTML = draftItems.map(i => {
+        pcs += i.quantity; tot += i.amount;
+        return `<div class="flex justify-between bg-slate-100 p-1.5 rounded"><span>${i.designNumber} (${i.size}) x ${i.quantity}</span><strong>${formatInr(i.amount)}</strong></div>`;
+      }).join('');
+      document.getElementById('draftPcs').innerText = pcs;
+      document.getElementById('draftTotal').innerText = formatInr(tot);
+    }
+    async function saveBill() {
+      if (draftItems.length === 0) return alert('Add items first');
+      const payload = {
+        billNumber: parseInt(document.getElementById('newBillNumber').value, 10),
+        billDate: document.getElementById('newBillDate').value,
+        totalPieces: draftItems.reduce((a,b)=>a+b.quantity, 0),
+        totalAmount: draftItems.reduce((a,b)=>a+b.amount, 0),
+        items: draftItems
+      };
+      await fetch(`${API_URL}/web/bills`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      closeModal('modalNewBill');
+      fetchLiveData();
+    }
+
+    function openPaymentModal() { document.getElementById('modalPayment').classList.remove('hidden'); }
+    async function savePayment() {
+      const amt = parseFloat(document.getElementById('payAmount').value)||0;
+      if (amt<=0) return alert('Enter amount');
+      await fetch(`${API_URL}/web/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentDate: document.getElementById('payDate').value, amount: amt, paymentMode: document.getElementById('payMode').value, reference: document.getElementById('payNotes').value })
+      });
+      closeModal('modalPayment');
+      fetchLiveData();
+    }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    fetchLiveData();
+    setInterval(fetchLiveData, 8000); // 8 sec auto sync
+  </script>
+</body>
+</html>
